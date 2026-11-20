@@ -1,0 +1,8 @@
+# Core image, numeric, and audio playback dependencies
+numpy>=1.24.0
+opencv-python>=4.7.0
+miniaudio>=1.73.0
+
+# Fallback audio decoders used when miniaudio cannot read a file
+scipy>=1.10.0
+soundfile>=0.12.0
