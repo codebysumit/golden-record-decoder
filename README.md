@@ -4,6 +4,8 @@ A Python/Tkinter desktop application that decodes the stereo image data in
 Voyager Golden Record audio. It displays the left and right channels side by side
 with live waveforms, reconstructed grayscale or RGB images, and spectrograms.
 
+<img width="1671" height="941" alt="banner" src="https://github.com/user-attachments/assets/aa396ed0-b7dd-47f3-b1f4-f0ef0092e938" />
+
 ## Requirements
 
 - Python 3.10 or later
