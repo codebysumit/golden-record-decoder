@@ -1,5 +1,6 @@
 """Tkinter user interface for the Voyager Golden Record decoder."""
 
+import math
 import os
 import sys
 import threading
@@ -16,10 +17,19 @@ from audio_utils import load_audio
 from channel_decoder import ChannelDecoder
 
 APP_VERSION = "1.0.0"
+OUTPUT_BUFFER_MSEC = 50
+OUTPUT_DRAIN_MSEC = 150
 AUTHOR_NAME = "Sumit Das"
 AUTHOR_GITHUB = "https://github.com/codebysumit/"
 AUTHOR_LINKEDIN = "https://www.linkedin.com/in/codebysumit/"
 AUTHOR_EMAIL = "codebysumit@gmail.com"
+
+
+def format_track_time(seconds):
+    tenths = max(0, int(round(seconds * 10)))
+    minutes, remainder = divmod(tenths, 600)
+    whole_seconds, fractional_second = divmod(remainder, 10)
+    return f"{minutes:02d}:{whole_seconds:02d}.{fractional_second}"
 
 
 def get_src_asset(filename):
@@ -69,6 +79,7 @@ class VoyagerApp:
         self.is_alive = True
         self.audio_loaded = False
         self.is_playing = False
+        self._audio_finished = False
         self.is_scrubbing = False
         self.is_minimized = False
         self.after_id = None
@@ -83,6 +94,7 @@ class VoyagerApp:
         self._audio_output_device = None
         self._audio_stream_generator = None
         self._audio_output_offset = 0.0
+        self._audio_output_end_time = None
         self._audio_output_lock = threading.Lock()
 
         # Persistent PhotoImages and canvas item IDs
@@ -219,7 +231,7 @@ class VoyagerApp:
         self.chk_catalog.pack(side=tk.LEFT, padx=(8, 4))
 
         # DC Enhancement toggle
-        self.enhance_var = tk.BooleanVar(value=True)
+        self.enhance_var = tk.BooleanVar(value=False)
         self.chk_enhance = tk.Checkbutton(toolbar, text="DC/Contrast Fix", variable=self.enhance_var,
                                           fg="#00e5ff", bg="#212121", selectcolor="#111111",
                                           font=("Segoe UI", 9), command=self.on_enhance_toggle)
@@ -245,8 +257,8 @@ class VoyagerApp:
         scrub_frame = tk.Frame(self.root, bg="#1a1a1a")
         scrub_frame.pack(side=tk.TOP, fill=tk.X, padx=8, pady=4)
 
-        self.lbl_time = tk.Label(scrub_frame, text="00:00 / 00:00", font=("Consolas", 10, "bold"),
-                                 fg="#ffd700", bg="#1a1a1a", width=18)
+        self.lbl_time = tk.Label(scrub_frame, text="00:00.0 / 00:00.0", font=("Consolas", 10, "bold"),
+                                 fg="#ffd700", bg="#1a1a1a", width=22)
         self.lbl_time.pack(side=tk.LEFT, padx=5)
 
         self.scrub_scale = tk.Scale(scrub_frame, from_=0, to=1000, orient=tk.HORIZONTAL,
@@ -458,10 +470,16 @@ class VoyagerApp:
             self.duration_sec = self.total_samples / float(self.sample_rate)
             with self._audio_output_lock:
                 self._audio_output_offset = 0.0
+                self._audio_output_end_time = None
 
             # Initialize Decoders
             self.left_ch = ChannelDecoder(self.audio_data[:, 0], sr, name="Left", initial_offset=0)
             self.right_ch = ChannelDecoder(self.audio_data[:, 1], sr, name="Right", initial_offset=0)
+            self.left_ch.wrap_at_end = False
+            self.right_ch.wrap_at_end = False
+            enhance = self.enhance_var.get()
+            self.left_ch.enhance = enhance
+            self.right_ch.enhance = enhance
             self.left_ch.set_fft_window(self.initial_nfft)
             self.right_ch.set_fft_window(self.initial_nfft)
 
@@ -479,6 +497,7 @@ class VoyagerApp:
             self.scrub_scale.config(from_=0, to=self.total_samples - 1)
             self.audio_loaded = True
             self.is_playing = False  # Starts PAUSED
+            self._audio_finished = False
 
             self.update_play_button_ui()
 
@@ -497,24 +516,40 @@ class VoyagerApp:
             self.lbl_status.config(text=f"Error loading file: {e}", fg="#ef5350")
 
     def update_play_button_ui(self):
+        self.btn_master_play.config(state=tk.NORMAL)
         if not self.audio_loaded:
             self.btn_master_play.config(text="▶ Play (Space)", bg="#424242", fg="#888888")
+            return
+
+        if self._audio_finished:
+            self.btn_master_play.config(
+                text="▶ Replay (Space)",
+                bg="#2e7d32",
+                fg="#ffffff",
+                state=tk.NORMAL,
+            )
+            if hasattr(self, 'btn_left_play'):
+                self.btn_left_play.config(text="Finishing...", state=tk.DISABLED)
+            if hasattr(self, 'btn_right_play'):
+                self.btn_right_play.config(text="Finishing...", state=tk.DISABLED)
             return
 
         if self.is_playing:
             self.btn_master_play.config(text="⏸ Pause (Space)", bg="#e65100", fg="#ffffff")
             if hasattr(self, 'btn_left_play'):
                 self.btn_left_play.config(text="⏸ Pause" if self.left_ch.go else "▶ Play",
-                                          bg="#e65100" if self.left_ch.go else "#2e7d32")
+                                          bg="#e65100" if self.left_ch.go else "#2e7d32",
+                                          state=tk.NORMAL)
             if hasattr(self, 'btn_right_play'):
                 self.btn_right_play.config(text="⏸ Pause" if self.right_ch.go else "▶ Play",
-                                           bg="#e65100" if self.right_ch.go else "#2e7d32")
+                                           bg="#e65100" if self.right_ch.go else "#2e7d32",
+                                           state=tk.NORMAL)
         else:
             self.btn_master_play.config(text="▶ Play (Space)", bg="#2e7d32", fg="#ffffff")
             if hasattr(self, 'btn_left_play'):
-                self.btn_left_play.config(text="▶ Play", bg="#2e7d32")
+                self.btn_left_play.config(text="▶ Play", bg="#2e7d32", state=tk.NORMAL)
             if hasattr(self, 'btn_right_play'):
-                self.btn_right_play.config(text="▶ Play", bg="#2e7d32")
+                self.btn_right_play.config(text="▶ Play", bg="#2e7d32", state=tk.NORMAL)
 
     def _audio_output_stream(self):
         frame_count = yield
@@ -532,6 +567,11 @@ class VoyagerApp:
                         position + frame_count * speed,
                         len(audio_data),
                     )
+                    if (
+                        self._audio_output_offset >= len(audio_data)
+                        and self._audio_output_end_time is None
+                    ):
+                        self._audio_output_end_time = time.monotonic()
 
             if audio_data is not None and playing and (left_enabled or right_enabled):
                 positions = position + np.arange(frame_count, dtype=np.float64) * speed
@@ -564,7 +604,7 @@ class VoyagerApp:
                 output_format=miniaudio.SampleFormat.FLOAT32,
                 nchannels=2,
                 sample_rate=self.sample_rate,
-                buffersize_msec=50,
+                buffersize_msec=OUTPUT_BUFFER_MSEC,
                 app_name="Voyager Golden Record Decoder",
             )
             generator = self._audio_output_stream()
@@ -595,6 +635,10 @@ class VoyagerApp:
         if not self.audio_loaded:
             self.browse_audio_file()
             return
+        with self._audio_output_lock:
+            playback_finished = self._audio_output_offset >= self.total_samples
+        if not self.is_playing and playback_finished:
+            self.perform_seek(0)
         if not self.is_playing and not self._ensure_audio_output():
             return
         self.is_playing = not self.is_playing
@@ -603,6 +647,8 @@ class VoyagerApp:
         self.update_play_button_ui()
 
     def toggle_channel_name(self, ch_name):
+        if self._audio_finished:
+            return
         if not self.audio_loaded:
             return
         ch = self.left_ch if ch_name == "Left" else self.right_ch
@@ -627,33 +673,41 @@ class VoyagerApp:
         self.right_ch.seek(self.right_ch.offset + delta)
         with self._audio_output_lock:
             self._audio_output_offset = float(self.left_ch.offset)
+            self._audio_output_end_time = None
         self.render_all_panels()
         self.update_status_bar()
 
     # --- Live Responsive Seek Bar Handlers ---
     def on_scrub_start(self, event):
         if not self.audio_loaded:
-            return
+            return "break"
         self.is_scrubbing = True
         self.handle_scale_click(event)
+        return "break"
 
     def on_scrub_motion(self, event):
         if not self.audio_loaded:
-            return
+            return "break"
         self.handle_scale_click(event)
+        return "break"
 
     def on_scrub_end(self, event):
         if not self.audio_loaded:
-            return
+            return "break"
         self.handle_scale_click(event)
         self.is_scrubbing = False
+        return "break"
 
     def handle_scale_click(self, event=None):
         if event is not None and hasattr(event, 'x'):
-            width = self.scrub_scale.winfo_width()
-            if width > 10:
-                frac = max(0.0, min(1.0, float(event.x) / float(width)))
-                target_spl = int(frac * (self.total_samples - 1))
+            first_x, _ = self.scrub_scale.coords(0)
+            last_x, _ = self.scrub_scale.coords(self.total_samples - 1)
+            if last_x != first_x:
+                frac = max(
+                    0.0,
+                    min(1.0, (float(event.x) - first_x) / (last_x - first_x)),
+                )
+                target_spl = int(round(frac * (self.total_samples - 1)))
             else:
                 target_spl = int(self.scrub_scale.get())
         else:
@@ -664,18 +718,26 @@ class VoyagerApp:
     def perform_seek(self, sample_offset):
         if not self.audio_loaded:
             return
+        if self._audio_finished:
+            self._audio_finished = False
+            self.left_ch.go = False
+            self.right_ch.go = False
         val = max(0, min(self.total_samples - 1, sample_offset))
         self.scrub_scale.set(val)
         with self._audio_output_lock:
             self._audio_output_offset = float(val)
+            self._audio_output_end_time = None
         self.left_ch.seek(val)
         self.right_ch.seek(val)
+        with self._audio_output_lock:
+            self._audio_finished = False
 
-        cur_sec = val / float(self.sample_rate)
-        m_c, s_c = divmod(int(cur_sec), 60)
-        m_t, s_t = divmod(int(self.duration_sec), 60)
-        self.lbl_time.config(text=f"{m_c:02d}:{s_c:02d} / {m_t:02d}:{s_t:02d}")
+        self.lbl_time.config(
+            text=f"{format_track_time(val / self.sample_rate)} / "
+            f"{format_track_time(self.duration_sec)}"
+        )
 
+        self.update_play_button_ui()
         self.render_all_panels()
         self.update_status_bar()
 
@@ -815,19 +877,53 @@ class VoyagerApp:
         try:
             if self.audio_loaded and not self.is_minimized:
                 if self.is_playing:
-                    with self._audio_output_lock:
-                        playback_finished = self._audio_output_offset >= self.total_samples
-                    if playback_finished:
+                    if (
+                        self._audio_output_device is not None
+                        and not self._audio_output_device.running
+                        and not self._ensure_audio_output()
+                    ):
                         self.left_ch.go = False
                         self.right_ch.go = False
                         self.is_playing = False
                         self.update_play_button_ui()
-                    else:
-                        base_lines = max(1, int(round(1.8 * self.speed)))
-                        if self.left_ch.go:
-                            self.left_ch.step(base_lines)
-                        if self.right_ch.go:
-                            self.right_ch.step(base_lines)
+
+                if self.is_playing:
+                    with self._audio_output_lock:
+                        playback_finished = (
+                            self._audio_output_offset >= self.total_samples
+                            and self._audio_output_end_time is not None
+                            and time.monotonic() - self._audio_output_end_time
+                            >= OUTPUT_DRAIN_MSEC / 1000
+                        )
+                    if playback_finished:
+                        self.is_playing = False
+                        self._audio_finished = True
+                        self.left_ch.wrap_at_end = False
+                        self.right_ch.wrap_at_end = False
+                        self._close_audio_output()
+                        self.update_play_button_ui()
+
+                if self.is_playing or self._audio_finished:
+                    with self._audio_output_lock:
+                        playback_offset = self._audio_output_offset
+                    for channel in (self.left_ch, self.right_ch):
+                        if not channel.go:
+                            continue
+                        samples_behind = playback_offset - channel.offset
+                        if samples_behind > 0:
+                            lines_behind = math.ceil(
+                                samples_behind / channel.nominal_period
+                            )
+                            channel.step(min(lines_behind, 32))
+
+                    if self._audio_finished and all(
+                        not channel.go or channel.offset >= self.total_samples
+                        for channel in (self.left_ch, self.right_ch)
+                    ):
+                        self.left_ch.go = False
+                        self.right_ch.go = False
+                        self._audio_finished = False
+                        self.update_play_button_ui()
 
                 self.render_all_panels()
                 self.update_status_bar()
@@ -914,19 +1010,46 @@ class VoyagerApp:
         if not self.audio_loaded:
             return
 
-        cur_offset = self.left_ch.offset
+        with self._audio_output_lock:
+            buffer_pending = self.is_playing or self._audio_output_end_time is not None
+            buffered_frames = (
+                int(
+                    self.sample_rate
+                    * OUTPUT_BUFFER_MSEC
+                    / 1000
+                    * max(self.speed, 0.01)
+                )
+                if buffer_pending
+                else 0
+            )
+            cur_offset = min(
+                max(0, self._audio_output_offset - buffered_frames),
+                self.total_samples,
+            )
+            if (
+                self._audio_output_end_time is not None
+                and time.monotonic() - self._audio_output_end_time
+                >= OUTPUT_DRAIN_MSEC / 1000
+            ):
+                cur_offset = self.total_samples
         cur_sec = cur_offset / float(self.sample_rate)
 
         if not self.is_scrubbing:
             self.scrub_scale.set(cur_offset)
 
-        m_c, s_c = divmod(int(cur_sec), 60)
-        m_t, s_t = divmod(int(self.duration_sec), 60)
-        self.lbl_time.config(text=f"{m_c:02d}:{s_c:02d} / {m_t:02d}:{s_t:02d}")
+        self.lbl_time.config(
+            text=f"{format_track_time(cur_sec)} / "
+            f"{format_track_time(self.duration_sec)}"
+        )
 
         st_l = "LOCKED" if self.left_ch.sync_locked else "COASTING"
         st_r = "LOCKED" if self.right_ch.sync_locked else "COASTING"
-        state_txt = "▶ PLAYING" if self.is_playing else "⏸ PAUSED"
+        if self.is_playing:
+            state_txt = "▶ PLAYING"
+        elif self._audio_finished:
+            state_txt = "FINISHING IMAGE DECODE"
+        else:
+            state_txt = "⏸ PAUSED"
         col_txt = self.color_var.get()
 
         use_cat = self.catalog_var.get()

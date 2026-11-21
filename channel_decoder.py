@@ -22,6 +22,7 @@ class ChannelDecoder:
         self.name = name
         self.offset = min(max(0, initial_offset), self.total_samples - 1)
         self.go = False
+        self.wrap_at_end = True
 
         # Scanline parameters (~734 samples per line at 44.1 kHz, 512 lines per frame)
         self.nominal_period = 734
@@ -53,7 +54,7 @@ class ChannelDecoder:
         self.completed_frames = []
 
         # Display settings
-        self.enhance = True
+        self.enhance = False
         self.color_mode = 'rgb'   # 'rgb' or 'gray'
         self.view_mode = 'waterfall'  # 'waterfall' or 'frame'
 
@@ -93,7 +94,7 @@ class ChannelDecoder:
         w_end = self.offset + self.nominal_period + 110
 
         if w_end >= self.total_samples:
-            self.offset = 0
+            self.offset = 0 if self.wrap_at_end else self.total_samples
             self.sync_locked = False
             return self.offset
 
@@ -122,7 +123,7 @@ class ChannelDecoder:
         self.offset += self.nominal_period
         self.last_period = self.nominal_period
         if self.offset >= self.total_samples - self.nominal_period:
-            self.offset = 0
+            self.offset = 0 if self.wrap_at_end else self.total_samples
         return self.offset
 
     def decode_single_line(self):
