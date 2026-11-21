@@ -57,6 +57,9 @@ class VoyagerApp:
                  duration=None, speed=1.0):
         self.root = root
         self.audio_path = audio_path
+        self.default_audio_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "resources", "voyager.mp3"
+        )
         self.interval_ms = max(10, interval_ms)
         self.speed = speed
         self.duration_limit = duration
@@ -97,7 +100,16 @@ class VoyagerApp:
         self.schedule_next_tick()
 
     def build_ui(self):
-        self.root.title("Voyager Golden Record Live Decoder")
+        self.root.title("Golden Record Decoder")
+        icon_sizes = ("16x16", "20x20", "24x24", "32x32", "40x40", "48x48", "64x64", "256x256")
+        self.icon_images = [
+            tk.PhotoImage(
+                master=self.root,
+                file=get_src_asset(os.path.join("icons", f"{size}.png")),
+            )
+            for size in icon_sizes
+        ]
+        self.root.iconphoto(True, *self.icon_images)
         self.root.geometry("1400x900")
         self.root.minsize(960, 600)
         self.root.configure(bg="#121212")
@@ -149,6 +161,19 @@ class VoyagerApp:
                                     bg="#ff9800", fg="#000000", activebackground="#fb8c00",
                                     command=self.browse_audio_file, relief=tk.RAISED, padx=8)
         self.btn_browse.pack(side=tk.LEFT, padx=6, pady=4)
+
+        self.btn_default_audio = tk.Button(
+            toolbar,
+            text="Open Default Audio",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1565c0",
+            fg="#ffffff",
+            activebackground="#1976d2",
+            command=lambda: self.load_audio_file(self.default_audio_path),
+            relief=tk.RAISED,
+            padx=8,
+        )
+        self.btn_default_audio.pack(side=tk.LEFT, padx=4, pady=4)
 
         self.btn_master_play = tk.Button(toolbar, text="▶ Play (Space)", font=("Segoe UI", 9, "bold"),
                                          bg="#2e7d32", fg="#ffffff", activebackground="#388e3c",
@@ -238,7 +263,7 @@ class VoyagerApp:
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.lbl_status = tk.Label(status_frame,
-                                   text="No audio file loaded. Click '📂 Open Audio File...' to select a recording.",
+                                   text="No audio loaded. Open an audio file or choose the default recording.",
                                    font=("Segoe UI", 9), fg="#ffb74d", bg="#0d0d0d")
         self.lbl_status.pack(side=tk.LEFT, padx=10)
 

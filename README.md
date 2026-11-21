@@ -18,7 +18,8 @@ python -m pip install -r requirements.txt
 python app.py
 ```
 
-Choose **File → Open Audio File** to load an MP3, WAV, FLAC, or OGG recording.
+Click **Open Default Audio** to load the included Voyager recording, or choose
+**File → Open Audio File** to load another MP3, WAV, FLAC, or OGG recording.
 Use **File → Save Current Frames** to export the current channel images to
 `golden_out/left` and `golden_out/right`. Playback, view, colour, catalog, and
 contrast controls are available from the toolbar and **Tools** menu.
@@ -27,6 +28,36 @@ the per-channel Play buttons let you mute either side independently.
 
 The **Help → About** dialog shows the application version and author contact
 links.
+
+## Build a standalone Windows executable
+
+Install the requirements, then run this command from the repository root in
+PowerShell:
+
+```powershell
+$root = (Get-Location).Path
+python -m PyInstaller `
+  --noconfirm `
+  --clean `
+  --onefile `
+  --console `
+  --name golden_record_decoder `
+  --icon "$root\src\256x256.ico" `
+  --distpath "$root\build" `
+  --workpath "$root\build\pyinstaller\work" `
+  --specpath "$root\build\pyinstaller" `
+  --add-data "$root\src;src" `
+  --add-data "$root\resources\voyager.mp3;resources" `
+  "$root\app.py"
+```
+
+The standalone, 64-bit Windows application is written to
+`build/golden_record_decoder.exe`. It bundles Python, the application
+dependencies, the app icons and profile image, and the sample `voyager.mp3`;
+users do not need to install Python or these packages. Build it on Windows
+with a 64-bit Python installation. Console mode keeps CLI output visible when
+running commands such as `--no-live`; opening the executable from Explorer
+also opens a console window alongside the GUI.
 
 ## Voyager Golden Record audio
 
@@ -69,6 +100,13 @@ By default, this uses `resources/voyager.mp3`. To select a different recording:
 python app.py --no-live --audio path\to\recording.mp3
 ```
 
+For the standalone executable, run it from a terminal to see progress and
+errors there:
+
+```powershell
+.\build\golden_record_decoder.exe --no-live
+```
+
 Optional arguments:
 
 - `--duration 60`: Decode only the first 60 seconds.
@@ -83,8 +121,9 @@ Optional arguments:
 - `audio_utils.py`: Audio loading helpers.
 - `batch_decoder.py`: Headless image export.
 - `golden_record_live.py`: Compatibility launcher for existing commands.
-- `resources/voyager.mp3`: Included sample recording for headless export.
+- `resources/voyager.mp3`: Included default recording for GUI and headless use.
 - `src/profile_photo.png`: Author image shown in the About dialog.
+- `src/256x256.ico` and `src/icons/`: Application icon assets.
 
 The bundled NASA image-catalog metadata includes material derived from
 GoldenDecoder; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -14,7 +14,7 @@ from voyager_app import VoyagerApp
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Voyager Golden Record Live Decoder (Python/Tkinter)",
+        description="Golden Record Decoder",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("--audio", "-a", type=str, default=None,

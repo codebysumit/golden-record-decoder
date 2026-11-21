@@ -6,3 +6,6 @@ miniaudio>=1.73.0
 # Fallback audio decoders used when miniaudio cannot read a file
 scipy>=1.10.0
 soundfile>=0.12.0
+
+# Build the standalone Windows executable
+pyinstaller==6.22.3
