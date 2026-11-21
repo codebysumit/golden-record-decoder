@@ -124,6 +124,3 @@ Optional arguments:
 - `resources/voyager.mp3`: Included default recording for GUI and headless use.
 - `src/profile_photo.png`: Author image shown in the About dialog.
 - `src/256x256.ico` and `src/icons/`: Application icon assets.
-
-The bundled NASA image-catalog metadata includes material derived from
-GoldenDecoder; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
